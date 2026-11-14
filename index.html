@@ -1,0 +1,311 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Holo-Earth Operations Room - Gaze Control & Auto Telegram</title>
+<link href="https://fonts.googleapis.com/css2?family=Cairo:wght@400;600;700&family=Lalezar&display=swap" rel="stylesheet">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils@0.3.1675466862/camera_utils.js" crossorigin="anonymous"></script>
+<script src="https://cdn.jsdelivr.net/npm/@mediapipe/drawing_utils@0.3.1675466124/drawing_utils.js" crossorigin="anonymous"></script>
+<script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands@0.4.1675469240/hands.js" crossorigin="anonymous"></script>
+<script src="https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh@0.4.1633559619/face_mesh.js" crossorigin="anonymous"></script>
+<style>
+:root{--bg:#02070A;--ink:#f2f6fa;--dim:#8296a8;--blue:#0297DE;--org:#FC734D;--ok:#35c0ff;--glass:rgba(10,20,30,.88);--line:rgba(255,255,255,.12)}
+*{box-sizing:border-box}
+html,body{height:100%}
+body{margin:0;overflow:hidden;background:var(--bg);color:var(--ink);font-family:'Cairo','Segoe UI',Tahoma,sans-serif}
+#stage{position:fixed;inset:0;z-index:1}
+.panel{position:fixed;background:var(--glass);backdrop-filter:blur(18px);-webkit-backdrop-filter:blur(18px);border:1px solid var(--line);border-radius:20px;z-index:10}
+#nav{top:calc(env(safe-area-inset-top,0px) + 12px);left:50%;transform:translateX(-50%);display:flex;align-items:center;gap:14px;padding:8px 16px;border-radius:999px;direction:ltr;white-space:nowrap;max-width:96vw}
+#status{padding:7px 14px;border-radius:999px;font-size:12px;font-weight:600;border:1px solid var(--ok);color:var(--ok);background:rgba(53,192,255,.1)}
+#back{background:none;border:1px solid var(--line);color:var(--ink);border-radius:999px;padding:6px 12px;cursor:pointer;font-family:inherit;display:none}
+#terminal-log{position:fixed;bottom:calc(env(safe-area-inset-bottom,0px) + 14px);left:14px;width:min(320px,52vw);max-height:130px;overflow:hidden;background:rgba(2,7,10,.82);border:1px solid var(--line);border-radius:16px;padding:10px 12px;font:11px/1.6 'Courier New',monospace;color:var(--ok);direction:ltr;text-align:left;z-index:10}
+#cam{right:14px;bottom:calc(env(safe-area-inset-bottom,0px) + 14px);width:min(220px,40vw);aspect-ratio:4/3;padding:0;overflow:hidden;display:none}
+#cam canvas{width:100%;height:100%;display:block;transform:scaleX(-1)}
+video{display:none}
+#ring{position:fixed;left:50%;top:50%;transform:translate(-50%,-50%);z-index:12;text-align:center;display:none;pointer-events:none}
+#ring b{display:block;font-size:54px;color:var(--org);text-shadow:0 0 30px rgba(252,115,77,.6)}
+#ring div{height:8px;width:200px;background:rgba(255,255,255,.15);border-radius:6px;overflow:hidden;margin:6px auto 0}
+#ring i{display:block;height:100%;width:0;background:linear-gradient(90deg,var(--blue),var(--org))}
+#intro{position:fixed;inset:0;z-index:50;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:20px;text-align:center;padding:24px;background:radial-gradient(ellipse at 50% 115%,rgba(252,115,77,.7),rgba(2,151,222,.45) 38%,rgba(2,7,10,0) 70%),var(--bg)}
+#intro h2{font:400 clamp(34px,5.5vw,68px)/1.2 'Lalezar',sans-serif;margin:0}
+#intro h2 em{color:var(--org);font-style:normal}
+#intro p{max-width:540px;color:var(--dim);margin:0;line-height:1.9;font-size:15px}
+.row{display:flex;gap:14px;flex-wrap:wrap;justify-content:center;margin-top:10px}
+.btn{background:#fff;color:var(--bg);border:0;padding:15px 28px;font-size:16px;font-weight:700;border-radius:999px;cursor:pointer;font-family:inherit;transition:transform .2s}
+.btn:hover{transform:scale(1.04)}
+.btn.org{background:var(--org);color:#1a0a04}
+.btn.blue{background:var(--blue);color:#fff}
+#gazeUI{position:fixed;top:calc(env(safe-area-inset-top,0px) + 75px);left:50%;transform:translateX(-50%);width:min(94%,720px);display:none;z-index:20;text-align:center}
+#gazeBox{background:rgba(12,22,34,.92);border:1px solid var(--org);border-radius:18px;padding:16px;font-size:20px;font-weight:700;min-height:65px;margin-bottom:14px;box-shadow:0 0 30px rgba(252,115,77,.35);display:flex;align-items:center;justify-content:center;color:#fff}
+#phrasesGrid{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;max-height:60vh;overflow-y:auto;padding-right:4px}
+.phraseCell{background:rgba(255,255,255,.05);border:1px solid var(--line);border-radius:12px;padding:14px 10px;font-size:15px;font-weight:700;transition:.2s;display:flex;align-items:center;justify-content:center;text-align:center;color:var(--ink)}
+.phraseCell.sel{background:var(--org);color:#1a0a04;border-color:var(--org);transform:scale(1.06);box-shadow:0 0 20px var(--org)}
+#banner{position:fixed;top:20px;left:50%;transform:translate(-50%,-200%);z-index:60;background:var(--org);color:#1a0a04;padding:12px 26px;border-radius:999px;font-weight:700;font-size:14px;transition:transform .5s;max-width:92vw;text-align:center}
+#banner.on{transform:translate(-50%,0)}
+#banner.err{background:#e5484d;color:#fff}
+</style>
+</head>
+<body>
+<div id="stage"></div>
+
+<div id="nav" class="panel">
+  <div style="font-weight:700">GAZE TELEGRAM ASSISTANT</div>
+  <div id="status">SYSTEM READY</div>
+  <button id="back">⟵ رجوع</button>
+</div>
+
+<div id="terminal-log"><div>[SYS] System initialized. Select mode.</div></div>
+<div id="cam" class="panel"><video id="vid" playsinline></video><canvas id="out" width="320" height="240"></canvas></div>
+<div id="ring"><b id="ringNum">0</b><div><i id="ringBar"></i></div></div>
+<div id="banner"></div>
+
+<div id="gazeUI">
+  <div id="gazeBox">أغلق عينك لاختيار الجملة المحددة (تنتقل التلقائياً)...</div>
+  <div id="phrasesGrid"></div>
+</div>
+
+<div id="intro">
+  <h2>نظام التحكم بـ<em>حركة العين وبوت تيليجرام</em></h2>
+  <p>اختر النظام أدناه لبدء التحكم عبر العين والإرسال التلقائي:</p>
+  <div class="row">
+    <button id="goGaze" class="btn org">👁️ تشغيل نظام التحكم الشامل بحركة العين</button>
+  </div>
+</div>
+
+<script>
+/* ===================== الإعدادات والتوكن ===================== */
+const CONFIG = {
+  BOT_TOKEN: "9194204635:AAFW6uKN08iyKJBth-M27iZQFtsNKgQUsiA",
+  CHAT_IDS: ["7821952199", "5605607773"],
+  DEFAULT_LOC: { lat: 31.8360, lon: 47.1440 },
+  CYCLE_MS: 2200,       // سرعة التنقل التلقائي بين الكلمات/الجمل
+  EYE_CLOSE_MS: 350,    // مدة إغماض العين لاعتبارها "اختيار"
+  COOLDOWN_MS: 3000     // مهلة قصيرة بعد الإرسال
+};
+
+const $ = id => document.getElementById(id);
+const esc = s => String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+
+function logTerm(msg) {
+  const box = $('terminal-log'), d = document.createElement('div');
+  d.textContent = '> ' + msg; box.appendChild(d);
+  while (box.children.length > 6) box.removeChild(box.firstChild);
+}
+function setStatus(t) { $('status').textContent = t; }
+function banner(msg, isErr) {
+  const b = $('banner'); b.textContent = msg; b.classList.toggle('err', !!isErr); b.classList.add('on');
+  setTimeout(() => b.classList.remove('on'), 3500);
+}
+function speak(t) {
+  try {
+    speechSynthesis.cancel();
+    const u = new SpeechSynthesisUtterance(t); u.lang = 'ar-SA'; speechSynthesis.speak(u);
+  } catch (e) {}
+}
+
+/* ===================== الموقع ===================== */
+function getLocation() {
+  return new Promise(res => {
+    if (!navigator.geolocation) return res({ ...CONFIG.DEFAULT_LOC, fallback: true });
+    navigator.geolocation.getCurrentPosition(
+      p => res({ lat: p.coords.latitude, lon: p.coords.longitude, fallback: false }),
+      () => res({ ...CONFIG.DEFAULT_LOC, fallback: true }),
+      { enableHighAccuracy: true, timeout: 5000, maximumAge: 10000 }
+    );
+  });
+}
+
+/* ===================== الإرسال إلى تيليجرام ===================== */
+async function sendTelegram(htmlText) {
+  const results = await Promise.all(CONFIG.CHAT_IDS.map(async chatId => {
+    try {
+      const r = await fetch(`https://api.telegram.org/bot${CONFIG.BOT_TOKEN}/sendMessage`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ chat_id: chatId, parse_mode: 'HTML', text: htmlText })
+      });
+      const j = await r.json();
+      if (!r.ok || !j.ok) throw new Error(j.description || r.status);
+      return true;
+    } catch (e) { logTerm('[Telegram] ERROR: ' + e.message); return false; }
+  }));
+  const okCount = results.filter(Boolean).length;
+  if (okCount) { logTerm(`[Telegram] Sent to ${okCount}/${results.length}`); banner('✅ تم إرسال الرسالة إلى تيليجرام تلقائياً'); }
+  else banner('❌ فشل الإرسال، تحقق من الإنترنت والتوكن', true);
+  return okCount > 0;
+}
+
+async function sendSelectedPhrase(phrase) {
+  const loc = await getLocation();
+  const map = `https://www.google.com/maps?q=${loc.lat},${loc.lon}`;
+  const text = `🚨 <b>رسالة مريض / طوارئ (تحكم بالعين)</b>\n\n💬 <b>المحتوى:</b> ${esc(phrase)}\n\n📍 <a href="${map}">موقع المريض على الخريطة</a>\nLAT ${loc.lat.toFixed(4)} · LON ${loc.lon.toFixed(4)}` +
+               (loc.fallback ? '\n⚠️ موقع افتراضي (تعذر تحديد GPS)' : '');
+  await sendTelegram(text);
+}
+
+/* ===================== المشهد ثلاثي الأبعاد ===================== */
+const scene = new THREE.Scene();
+const cam3 = new THREE.PerspectiveCamera(55, innerWidth / innerHeight, 0.1, 200);
+cam3.position.z = 6;
+const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
+renderer.setSize(innerWidth, innerHeight);
+renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+$('stage').appendChild(renderer.domElement);
+scene.add(new THREE.AmbientLight(0x0297de, .8));
+const earth = new THREE.Group(); scene.add(earth);
+earth.add(new THREE.Mesh(new THREE.SphereGeometry(1.68, 48, 24),
+  new THREE.MeshBasicMaterial({ color: 0x0297de, wireframe: true, transparent: true, opacity: 0.35 })));
+(function frame() { requestAnimationFrame(frame); earth.rotation.y += 0.003; renderer.render(scene, cam3); })();
+addEventListener('resize', () => {
+  cam3.aspect = innerWidth / innerHeight; cam3.updateProjectionMatrix(); renderer.setSize(innerWidth, innerHeight);
+});
+
+/* ===================== بنك الجمل الشاملة ===================== */
+const phrasesList = [
+  "أحتاج مساعدة عاجلة 🚨",
+  "أشعر بالعطش، أريد ماءً 💧",
+  "أشعر بألم شديد، استدعِ الطبيب 🩺",
+  "أريد الذهاب إلى الحمام 🚻",
+  "أحتاج تعديل وضعية السرير 🛏️",
+  "أشعر بضيق في التنفس 🫁",
+  "أريد النوم، أطفئ الإضاءة 🌙",
+  "أنا بخير ولا أحتاج شيئاً 👍",
+  "أريد تناول طعام أو دواء 💊",
+  "الرجاء فتح النافذة لتجديد الهواء 🪟",
+  "أشعر بالحرارة الشديدة 🌡️",
+  "أشعر بالبرد، غطني من فضلك 🧥"
+];
+
+let activeIdx = 0, lastCycleT = performance.now();
+let isSending = false, sendTimer = null, closeStart = 0, eyeWasClosed = false;
+
+const grid = $('phrasesGrid');
+phrasesList.forEach((p, i) => {
+  const d = document.createElement('div');
+  d.className = 'phrase-cell' + (i === 0 ? ' sel' : '');
+  d.className = 'phraseCell' + (i === 0 ? ' sel' : '');
+  d.textContent = p; d.id = 'p-' + i;
+  grid.appendChild(d);
+});
+const updateGrid = () => phrasesList.forEach((_, i) => $('p-' + i).classList.toggle('sel', i === activeIdx));
+
+const R_EYE = [33, 160, 158, 133, 153, 144], L_EYE = [362, 385, 387, 263, 373, 380];
+const dist = (a, b) => Math.hypot(a.x - b.x, a.y - b.y);
+const ear = (lm, i) => (dist(lm[i[1]], lm[i[5]]) + dist(lm[i[2]], lm[i[4]])) / (2 * dist(lm[i[0]], lm[i[3]]));
+let baseEAR = 0.3;
+
+function handleGazeSystem(res) {
+  const lm = res.multiFaceLandmarks && res.multiFaceLandmarks[0];
+  const now = performance.now();
+  if (!lm) { setStatus('NO FACE'); return; }
+
+  const e = (ear(lm, R_EYE) + ear(lm, L_EYE)) / 2;
+  if (e > 0.15 && !eyeWasClosed) baseEAR = baseEAR * 0.95 + e * 0.05;
+  const closed = e < baseEAR * 0.65;
+
+  // إذا كان النظام بصدد الإرسال المجمد، لا نتحرك
+  if (isSending) return;
+
+  // 1. التنقل التلقائي بين الجمل بمرور الوقت إذا لم يتم الإرسال
+  if (now - lastCycleT > CONFIG.CYCLE_MS) {
+    activeIdx = (activeIdx + 1) % phrasesList.length;
+    updateGrid();
+    lastCycleT = now;
+  }
+
+  // 2. كشف غلق العين لاختيار الجملة الحالية
+  if (closed && !eyeWasClosed) {
+    eyeWasClosed = true;
+    closeStart = now;
+  }
+
+  if (closed && eyeWasClosed) {
+    const dur = now - closeStart;
+    const pct = Math.min(100, (dur / CONFIG.EYE_CLOSE_MS) * 100);
+    setRing('👁️', pct);
+    setStatus('HOLDING EYE...');
+
+    if (dur >= CONFIG.EYE_CLOSE_MS) {
+      // تم اختيار الجملة الحالية بواسطة غلق العين!
+      eyeWasClosed = false;
+      setRing(0, 0);
+      triggerSelection();
+    }
+  }
+
+  if (!closed && eyeWasClosed) {
+    eyeWasClosed = false;
+    setRing(0, 0);
+  }
+
+  if (!closed && !eyeWasClosed) {
+    setStatus(`SCANNING · ITEM ${activeIdx + 1}/${phrasesList.length}`);
+  }
+}
+
+function setRing(num, pct) {
+  const r = $('ring');
+  r.style.display = num ? 'block' : 'none';
+  $('ringNum').textContent = num || ''; $('ringBar').style.width = pct + '%';
+}
+
+function triggerSelection() {
+  isSending = true;
+  const selectedPhrase = phrasesList[activeIdx];
+  $('gazeBoxinnerHTML') // just in case
+  $('gazeBox').innerHTML = `✅ تم اختيار: <span style="color:var(--ok);margin-right:8px">${selectedPhrase}</span><br><span style="font-size:14px;color:var(--dim);margin-top:4px;display:block">📤 جاري الإرسال التلقائي خلال ثانية...</span>`;
+  logTerm('[Gaze] Selected: ' + selectedPhrase);
+  speak('تم الاختيار');
+
+  // الإرسال التلقائي بعد ثانية واحدة بالضبط
+  setTimeout(async () => {
+    await sendSelectedPhrase(selectedPhrase);
+    setTimeout(() => {
+      isSending = false;
+      $('gazeBox').textContent = 'أغلق عينك لاختيار الجملة المحددة (تنتقل التلقائياً)...';
+      lastCycleT = performance.now();
+    }, CONFIG.COOLDOWN_MS);
+  }, 1000);
+}
+
+/* ===================== تشغيل الكاميرا والمودل ===================== */
+const out = $('out'), outCtx = out.getContext('2d');
+
+async function launchGazeSystem() {
+  $('intro').style.display = 'none';
+  $('cam').style.display = 'block';
+  $('back').style.display = 'inline-block';
+  $('gazeUI').style.display = 'block';
+  logTerm('Launching Gaze & Telegram system...');
+  setStatus('STARTING CAMERA');
+
+  const faceMesh = new FaceMesh({ locateFile: f => `https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh@0.4.1633559619/${f}` });
+  faceMesh.setOptions({ maxNumFaces: 1, refineLandmarks: true, minDetectionConfidence: 0.6, minTrackingConfidence: 0.6 });
+  faceMesh.onResults(res => {
+    outCtx.save(); outCtx.clearRect(0, 0, out.width, out.height);
+    outCtx.drawImage(res.image, 0, 0, out.width, out.height);
+    handleGazeSystem(res);
+    outCtx.restore();
+  });
+
+  try {
+    const camera = new Camera($('vid'), {
+      onFrame: async () => { await faceMesh.send({ image: $('vid') }); },
+      width: 640, height: 480
+    });
+    await camera.start();
+    setStatus('SYSTEM RUNNING');
+  } catch (e) {
+    setStatus('CAMERA ERROR');
+    logTerm('Camera error: ' + e.message);
+    banner('❌ تعذر تشغيل الكاميرا، يرجى السماح بالإذن', true);
+  }
+}
+
+$('goGaze').onclick = launchGazeSystem;
+$('back').onclick = () => location.reload();
+</script>
+</body>
+</html>
